@@ -1,0 +1,29 @@
+### Maven ###
+target/
+.mvn/wrapper/maven-wrapper.jar
+
+### Eclipse / STS ###
+.classpath
+.project
+.settings/
+.apt_generated
+.factorypath
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+
+### VS Code ###
+.vscode/
+
+### Node ###
+node_modules/
+npm-debug.log*
+
+### OS ###
+.DS_Store
+Thumbs.db

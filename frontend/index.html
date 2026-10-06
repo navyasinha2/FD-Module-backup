@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Open Fixed Deposit Account</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <main class="page">
+    <nav class="topnav">
+      <a href="index.html" aria-current="page">Open account</a>
+      <a href="withdraw.html">Withdraw FD</a>
+      <a href="operations.html">Operations</a>
+    </nav>
+    <h1>Open Fixed Deposit Account</h1>
+    <p class="subtitle">fd-service · POST /fd-accounts</p>
+
+    <form id="fd-form" novalidate>
+      <fieldset>
+        <legend>Account</legend>
+
+        <label for="custId">Customer ID *</label>
+        <input type="text" id="custId" name="custId" placeholder="CUST-001" required />
+
+        <label for="productCode">Product Code *</label>
+        <input type="text" id="productCode" name="productCode" placeholder="FD-REG" required />
+
+        <label for="principal">Principal Amount *</label>
+        <input type="number" id="principal" name="principal" min="0.01" step="0.01" required />
+
+        <label for="tenureMonths">Tenure (months) *</label>
+        <input type="number" id="tenureMonths" name="tenureMonths" min="1" step="1" required />
+
+        <label for="currencyCode">Currency Code</label>
+        <input type="text" id="currencyCode" name="currencyCode" placeholder="USD" maxlength="3" />
+
+        <label for="rateId">Rate ID *</label>
+        <input type="text" id="rateId" name="rateId" placeholder="RATE-12M" maxlength="20" required />
+        <p class="hint">Contracted rate from Product &amp; Pricing. It will fill in from the product code once Group 2's service is live.</p>
+
+        <label for="categoryCd">Category Code</label>
+        <input type="text" id="categoryCd" name="categoryCd" placeholder="(optional)" />
+
+        <label for="interestType">Interest Type</label>
+        <select id="interestType" name="interestType">
+          <option value="">Use default (Compound)</option>
+          <option value="COMPOUND">Compound — interest added to principal</option>
+          <option value="SIMPLE">Simple — interest paid out</option>
+        </select>
+
+        <label for="compoundingFreq">Compounding Frequency</label>
+        <select id="compoundingFreq" name="compoundingFreq">
+          <option value="">Use product default</option>
+          <option value="MONTHLY">Monthly</option>
+          <option value="QUARTERLY">Quarterly</option>
+          <option value="HALF_YEARLY">Half-yearly</option>
+          <option value="ANNUALLY">Annually</option>
+        </select>
+
+        <label for="payoutFreq">Payout Frequency</label>
+        <select id="payoutFreq" name="payoutFreq">
+          <option value="">Use product default</option>
+          <option value="ON_MATURITY">On maturity</option>
+          <option value="MONTHLY">Monthly</option>
+          <option value="QUARTERLY">Quarterly</option>
+          <option value="HALF_YEARLY">Half-yearly</option>
+          <option value="ANNUALLY">Annually</option>
+        </select>
+
+        <label for="maturityInstruction">Maturity Instruction</label>
+        <select id="maturityInstruction" name="maturityInstruction">
+          <option value="">Use product default</option>
+          <option value="PAYOUT">Payout</option>
+          <option value="RENEW">Renew</option>
+        </select>
+      </fieldset>
+
+      <fieldset>
+        <legend>Roles</legend>
+        <p class="hint">At least one role is required. At most one GUARANTOR and one GUARDIAN per account.</p>
+        <div id="roles-list"></div>
+        <button type="button" id="add-role-btn" class="secondary">+ Add role</button>
+      </fieldset>
+
+      <div id="form-errors" class="errors" hidden></div>
+
+      <button type="submit" id="submit-btn">Open Account</button>
+    </form>
+
+    <section id="result-panel" class="result" hidden>
+      <h2 id="result-title"></h2>
+      <pre id="result-body"></pre>
+    </section>
+  </main>
+
+  <template id="role-row-template">
+    <div class="role-row">
+      <input type="text" class="role-custId" placeholder="Customer ID" />
+      <select class="role-type">
+        <option value="OWNER">Owner</option>
+        <option value="JOINT_HOLDER">Joint Holder</option>
+        <option value="NOMINEE">Nominee</option>
+        <option value="GUARANTOR">Guarantor</option>
+        <option value="GUARDIAN">Guardian</option>
+        <option value="BENEFICIARY">Beneficiary</option>
+      </select>
+      <label class="role-primary-label">
+        <input type="checkbox" class="role-primary" /> Primary
+      </label>
+      <button type="button" class="remove-role-btn" aria-label="Remove role">&times;</button>
+    </div>
+  </template>
+
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

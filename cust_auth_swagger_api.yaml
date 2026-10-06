@@ -1,0 +1,1401 @@
+openapi: 3.0.3
+info:
+  title: Banking Technology Lab — Auth & Customer Module API
+  version: '1.0.0'
+  description: |
+    Covers two modules of the Banking Technology Lab (CSF 3142) project:
+
+    * **Login / Auth** — registration, login, JWT issuance, role-based access
+    * **Customer Management** — customer profile plus its typed child records
+      (Name, Address, Contact Info, Proof of ID, Identification) and the
+      shared Classification lookup table
+
+    Roles: `CUSTOMER`, `BANK_OFFICER`, `ADMIN`. The required role for each
+    endpoint is stated explicitly in its description — `BANK_OFFICER` and
+    `ADMIN` can generally act on any customer; `CUSTOMER` can only act on
+    their own record, resolved from the JWT, never from a path/query param.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Auth
+    description: Registration, login, and token issuance
+  - name: Customer Profile
+    description: Core customer record
+  - name: Customer Name
+    description: Typed name components
+  - name: Customer Address
+    description: Typed address components
+  - name: Customer Contact Info
+    description: Typed contact details
+  - name: Customer Proof of ID
+    description: KYC / identity documents
+  - name: Customer Identification
+    description: Internal identification / lookup records
+  - name: Classification
+    description: Shared reference/lookup data used across the Customer module
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ---------------------------------------------------------------------
+  # AUTH
+  # ---------------------------------------------------------------------
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      description: |
+        Public endpoint, no authentication required.
+        Hashes the password with BCrypt before storage; rejects duplicate usernames.
+      security: []
+      operationId: registerUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '409':
+          description: Username or email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Validation error (missing/malformed fields)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Authenticate and receive a JWT
+      description: |
+        Public endpoint, no authentication required.
+        Validates credentials against the stored BCrypt hash and returns a
+        JWT containing the user's role claim on success.
+      security: []
+      operationId: loginUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid username or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get the currently authenticated user's identity
+      description: |
+        **Required role:** any authenticated role (`CUSTOMER`, `BANK_OFFICER`, `ADMIN`).
+        Identity is resolved entirely from the JWT in the `Authorization` header.
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: Current user identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUser'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------
+  # CUSTOMER PROFILE (core)
+  # ---------------------------------------------------------------------
+  /api/customer/profile:
+    get:
+      tags: [Customer Profile]
+      summary: Get the logged-in customer's own profile
+      description: |
+        **Required role:** `CUSTOMER`.
+        Customer identity is resolved from the JWT — never from a query
+        parameter — so a customer cannot view another customer's profile
+        by editing the URL. Response aggregates core details plus all
+        typed child records (names, addresses, contacts, proof of ID,
+        identification).
+      operationId: getOwnProfile
+      responses:
+        '200':
+          description: The caller's own customer profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerProfile'
+        '403':
+          description: Caller is not a CUSTOMER
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/customer:
+    get:
+      tags: [Customer Profile]
+      summary: Search / list customers
+      description: |
+        **Required role:** `BANK_OFFICER`, `ADMIN`.
+        Customers cannot call this endpoint — they only see their own
+        record via `/api/customer/profile`.
+      operationId: searchCustomers
+      parameters:
+        - name: name
+          in: query
+          schema: { type: string }
+          description: Partial match on full name
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Paginated list of matching customers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerPage'
+        '403':
+          description: Caller is not BANK_OFFICER or ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags: [Customer Profile]
+      summary: Create a new customer profile
+      description: |
+        **Required role:** `BANK_OFFICER`, `ADMIN`.
+        Typically called right after `/api/auth/register` to attach a
+        customer profile to a newly created login, or by an officer
+        onboarding a walk-in customer.
+      operationId: createCustomer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomerRequest'
+      responses:
+        '201':
+          description: Customer profile created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerProfile'
+        '403':
+          description: Caller is not BANK_OFFICER or ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Customer number already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/customer/{custId}:
+    get:
+      tags: [Customer Profile]
+      summary: Get a specific customer's profile by ID
+      description: |
+        **Required role:** `BANK_OFFICER`, `ADMIN`.
+        Use `/api/customer/profile` instead if the caller is the customer themself.
+      operationId: getCustomerById
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+      responses:
+        '200':
+          description: Customer profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerProfile'
+        '403':
+          description: Caller is not BANK_OFFICER or ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Customer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags: [Customer Profile]
+      summary: Update a customer's core details
+      description: |
+        **Required role:** `BANK_OFFICER`, `ADMIN`.
+        Updates `CUSTOMER_DETAILS` only — child records (name, address,
+        etc.) are managed through their own dedicated endpoints below.
+      operationId: updateCustomer
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomerRequest'
+      responses:
+        '200':
+          description: Updated customer profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerProfile'
+        '403':
+          description: Caller is not BANK_OFFICER or ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Customer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Customer Profile]
+      summary: Delete a customer's profile
+      description: |
+        **Required role:** `ADMIN`.
+        Removing a customer is restricted beyond the general update/create
+        permissions given the downstream impact on all typed child records.
+      operationId: deleteCustomer
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+      responses:
+        '204':
+          description: Customer profile deleted
+        '403':
+          description: Caller is not ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Customer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------
+  # CUSTOMER NAME
+  # ---------------------------------------------------------------------
+  /api/customer/{custId}/names:
+    get:
+      tags: [Customer Name]
+      summary: List a customer's name components
+      description: "**Required role:** `CUSTOMER` (self only), `BANK_OFFICER`, `ADMIN`."
+      operationId: listCustomerNames
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+      responses:
+        '200':
+          description: List of name records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CustomerName'
+    post:
+      tags: [Customer Name]
+      summary: Add a name component
+      description: "**Required role:** `BANK_OFFICER`, `ADMIN`."
+      operationId: addCustomerName
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerNameRequest'
+      responses:
+        '201':
+          description: Name record created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerName'
+
+  /api/customer/{custId}/names/{id}:
+    put:
+      tags: [Customer Name]
+      summary: Update a name component
+      description: "**Required role:** `BANK_OFFICER`, `ADMIN`."
+      operationId: updateCustomerName
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+        - $ref: '#/components/parameters/RecordIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerNameRequest'
+      responses:
+        '200':
+          description: Name record updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerName'
+        '403':
+          description: Caller is not BANK_OFFICER or ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Customer or name record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Customer Name]
+      summary: Delete a name component
+      description: "**Required role:** `BANK_OFFICER`, `ADMIN`."
+      operationId: deleteCustomerName
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+        - $ref: '#/components/parameters/RecordIdPath'
+      responses:
+        '204':
+          description: Name record deleted
+        '403':
+          description: Caller is not BANK_OFFICER or ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Customer or name record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------
+  # CUSTOMER ADDRESS
+  # ---------------------------------------------------------------------
+  /api/customer/{custId}/addresses:
+    get:
+      tags: [Customer Address]
+      summary: List a customer's addresses
+      description: "**Required role:** `CUSTOMER` (self only), `BANK_OFFICER`, `ADMIN`."
+      operationId: listCustomerAddresses
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+      responses:
+        '200':
+          description: List of address records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CustomerAddress'
+    post:
+      tags: [Customer Address]
+      summary: Add an address
+      description: "**Required role:** `CUSTOMER` (self only), `BANK_OFFICER`, `ADMIN`."
+      operationId: addCustomerAddress
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerAddressRequest'
+      responses:
+        '201':
+          description: Address record created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAddress'
+
+  /api/customer/{custId}/addresses/{id}:
+    put:
+      tags: [Customer Address]
+      summary: Update an address
+      description: "**Required role:** `CUSTOMER` (self only), `BANK_OFFICER`, `ADMIN`."
+      operationId: updateCustomerAddress
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+        - $ref: '#/components/parameters/RecordIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerAddressRequest'
+      responses:
+        '200':
+          description: Address record updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAddress'
+        '403':
+          description: Caller is neither the owning CUSTOMER, BANK_OFFICER, nor ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Customer or address record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Customer Address]
+      summary: Delete an address
+      description: "**Required role:** `CUSTOMER` (self only), `BANK_OFFICER`, `ADMIN`."
+      operationId: deleteCustomerAddress
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+        - $ref: '#/components/parameters/RecordIdPath'
+      responses:
+        '204':
+          description: Address record deleted
+        '403':
+          description: Caller is neither the owning CUSTOMER, BANK_OFFICER, nor ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Customer or address record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------
+  # CUSTOMER CONTACT INFO
+  # ---------------------------------------------------------------------
+  /api/customer/{custId}/contacts:
+    get:
+      tags: [Customer Contact Info]
+      summary: List a customer's contact details
+      description: "**Required role:** `CUSTOMER` (self only), `BANK_OFFICER`, `ADMIN`."
+      operationId: listCustomerContacts
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+      responses:
+        '200':
+          description: List of contact records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CustomerContact'
+    post:
+      tags: [Customer Contact Info]
+      summary: Add a contact detail
+      description: "**Required role:** `CUSTOMER` (self only), `BANK_OFFICER`, `ADMIN`."
+      operationId: addCustomerContact
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerContactRequest'
+      responses:
+        '201':
+          description: Contact record created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerContact'
+
+  /api/customer/{custId}/contacts/{id}:
+    put:
+      tags: [Customer Contact Info]
+      summary: Update a contact detail
+      description: "**Required role:** `CUSTOMER` (self only), `BANK_OFFICER`, `ADMIN`."
+      operationId: updateCustomerContact
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+        - $ref: '#/components/parameters/RecordIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerContactRequest'
+      responses:
+        '200':
+          description: Contact record updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerContact'
+        '403':
+          description: Caller is neither the owning CUSTOMER, BANK_OFFICER, nor ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Customer or contact record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Customer Contact Info]
+      summary: Delete a contact detail
+      description: "**Required role:** `CUSTOMER` (self only), `BANK_OFFICER`, `ADMIN`."
+      operationId: deleteCustomerContact
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+        - $ref: '#/components/parameters/RecordIdPath'
+      responses:
+        '204':
+          description: Contact record deleted
+        '403':
+          description: Caller is neither the owning CUSTOMER, BANK_OFFICER, nor ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Customer or contact record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------
+  # CUSTOMER PROOF OF ID
+  # ---------------------------------------------------------------------
+  /api/customer/{custId}/proof-of-id:
+    get:
+      tags: [Customer Proof of ID]
+      summary: List a customer's proof-of-ID / KYC documents
+      description: "**Required role:** `CUSTOMER` (self only), `BANK_OFFICER`, `ADMIN`."
+      operationId: listCustomerProofOfId
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+      responses:
+        '200':
+          description: List of proof-of-ID records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CustomerProofOfId'
+    post:
+      tags: [Customer Proof of ID]
+      summary: Add a proof-of-ID document
+      description: |
+        **Required role:** `BANK_OFFICER`, `ADMIN`.
+        KYC documents cannot be self-submitted by the customer without
+        officer verification.
+      operationId: addCustomerProofOfId
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerProofOfIdRequest'
+      responses:
+        '201':
+          description: Proof-of-ID record created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerProofOfId'
+
+  /api/customer/{custId}/proof-of-id/{id}:
+    put:
+      tags: [Customer Proof of ID]
+      summary: Update a proof-of-ID document
+      description: |
+        **Required role:** `BANK_OFFICER`, `ADMIN`.
+        KYC documents cannot be self-updated by the customer without
+        officer verification.
+      operationId: updateCustomerProofOfId
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+        - $ref: '#/components/parameters/RecordIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerProofOfIdRequest'
+      responses:
+        '200':
+          description: Proof-of-ID record updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerProofOfId'
+        '403':
+          description: Caller is not BANK_OFFICER or ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Customer or proof-of-ID record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Customer Proof of ID]
+      summary: Delete a proof-of-ID document
+      description: |
+        **Required role:** `BANK_OFFICER`, `ADMIN`.
+        KYC documents cannot be self-removed by the customer without
+        officer verification.
+      operationId: deleteCustomerProofOfId
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+        - $ref: '#/components/parameters/RecordIdPath'
+      responses:
+        '204':
+          description: Proof-of-ID record deleted
+        '403':
+          description: Caller is not BANK_OFFICER or ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Customer or proof-of-ID record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------
+  # CUSTOMER IDENTIFICATION
+  # ---------------------------------------------------------------------
+  /api/customer/{custId}/identification:
+    get:
+      tags: [Customer Identification]
+      summary: List a customer's identification records
+      description: "**Required role:** `BANK_OFFICER`, `ADMIN`."
+      operationId: listCustomerIdentification
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+      responses:
+        '200':
+          description: List of identification records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CustomerIdentification'
+    post:
+      tags: [Customer Identification]
+      summary: Add an identification record
+      description: "**Required role:** `BANK_OFFICER`, `ADMIN`."
+      operationId: addCustomerIdentification
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerIdentificationRequest'
+      responses:
+        '201':
+          description: Identification record created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerIdentification'
+
+  /api/customer/{custId}/identification/{id}:
+    put:
+      tags: [Customer Identification]
+      summary: Update an identification record
+      description: "**Required role:** `BANK_OFFICER`, `ADMIN`."
+      operationId: updateCustomerIdentification
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+        - $ref: '#/components/parameters/RecordIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerIdentificationRequest'
+      responses:
+        '200':
+          description: Identification record updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerIdentification'
+        '403':
+          description: Caller is not BANK_OFFICER or ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Customer or identification record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Customer Identification]
+      summary: Delete an identification record
+      description: "**Required role:** `BANK_OFFICER`, `ADMIN`."
+      operationId: deleteCustomerIdentification
+      parameters:
+        - $ref: '#/components/parameters/CustIdPath'
+        - $ref: '#/components/parameters/RecordIdPath'
+      responses:
+        '204':
+          description: Identification record deleted
+        '403':
+          description: Caller is not BANK_OFFICER or ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Customer or identification record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------
+  # CLASSIFICATION (shared lookup)
+  # ---------------------------------------------------------------------
+  /api/classification:
+    get:
+      tags: [Classification]
+      summary: List classification / lookup values
+      description: |
+        **Required role:** any authenticated role.
+        Used to populate dropdowns (name-component types, address types,
+        contact types, proof-of-ID types, etc.). Not customer-scoped —
+        this is global reference data.
+      operationId: listClassifications
+      parameters:
+        - name: type
+          in: query
+          schema: { type: string }
+          description: Filter by classification type, e.g. `ADDRESS_TYPE`, `ID_DOC_TYPE`
+      responses:
+        '200':
+          description: List of classification values
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Classification'
+
+    post:
+      tags: [Classification]
+      summary: Add a new classification value
+      description: |
+        **Required role:** `ADMIN`.
+        Adds a new enumerable type/value pair (e.g. a new supported ID
+        document type) without requiring a schema change anywhere else.
+      operationId: addClassification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClassificationRequest'
+      responses:
+        '201':
+          description: Classification value created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Classification'
+        '403':
+          description: Caller is not ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/classification/{id}:
+    put:
+      tags: [Classification]
+      summary: Update a classification value
+      description: |
+        **Required role:** `ADMIN`.
+        Updates an existing type/value pair without requiring a schema
+        change anywhere else.
+      operationId: updateClassification
+      parameters:
+        - $ref: '#/components/parameters/RecordIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClassificationRequest'
+      responses:
+        '200':
+          description: Classification value updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Classification'
+        '403':
+          description: Caller is not ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Classification value not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Classification]
+      summary: Delete a classification value
+      description: |
+        **Required role:** `ADMIN`.
+        Removing a value in active use by a customer child record should
+        be rejected by the service layer.
+      operationId: deleteClassification
+      parameters:
+        - $ref: '#/components/parameters/RecordIdPath'
+      responses:
+        '204':
+          description: Classification value deleted
+        '403':
+          description: Caller is not ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Classification value not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT issued by `/api/auth/login`, containing the user's role claim.
+        Sent as `Authorization: Bearer <token>`.
+
+  parameters:
+    CustIdPath:
+      name: custId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Internal customer identifier (`CSTID_IDFR`)
+
+    RecordIdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+      description: Identifier of the specific child record
+
+  schemas:
+    Role:
+      type: string
+      enum: [CUSTOMER, BANK_OFFICER, ADMIN]
+
+    # ---------------- Auth ----------------
+    RegisterRequest:
+      type: object
+      required: [username, password, email]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+          example: jane_doe
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: correct-horse-battery-staple
+        email:
+          type: string
+          format: email
+          example: jane.doe@example.com
+
+    RegisterResponse:
+      type: object
+      properties:
+        userId:
+          type: integer
+          format: int64
+        username:
+          type: string
+        message:
+          type: string
+          example: User registered successfully
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT bearer token
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+          description: Seconds until expiry
+          example: 36000
+        role:
+          $ref: '#/components/schemas/Role'
+
+    CurrentUser:
+      type: object
+      properties:
+        userId:
+          type: integer
+          format: int64
+        username:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        custId:
+          type: string
+          nullable: true
+          description: Linked customer identifier, if this login has a customer profile
+
+    # ---------------- Customer core ----------------
+    CustomerProfile:
+      type: object
+      properties:
+        custId:
+          type: string
+        custType:
+          type: string
+        fullName:
+          type: string
+        dateOfBirth:
+          type: string
+          format: date
+        gender:
+          type: string
+        preferredLanguage:
+          type: string
+        status:
+          type: string
+        countryOfOrigin:
+          type: string
+        custCategoryCode:
+          type: string
+          description: FK into the Customer Category lookup; drives rate/pricing selection in the FD module
+        effectiveDate:
+          type: string
+          format: date
+        names:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerName'
+        addresses:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerAddress'
+        contacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerContact'
+        proofOfIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerProofOfId'
+        identifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerIdentification'
+
+    CustomerPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerProfile'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+        totalPages:
+          type: integer
+
+    CreateCustomerRequest:
+      type: object
+      required: [custType, fullName]
+      properties:
+        userId:
+          type: integer
+          format: int64
+          nullable: true
+          description: Optional link to an existing AUTH_USERS login
+        custType:
+          type: string
+        fullName:
+          type: string
+        dateOfBirth:
+          type: string
+          format: date
+        gender:
+          type: string
+        preferredLanguage:
+          type: string
+        countryOfOrigin:
+          type: string
+        custCategoryCode:
+          type: string
+          description: FK into the Customer Category lookup; drives rate/pricing selection in the FD module
+        effectiveDate:
+          type: string
+          format: date
+
+    UpdateCustomerRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+        status:
+          type: string
+        preferredLanguage:
+          type: string
+        countryOfOrigin:
+          type: string
+        custCategoryCode:
+          type: string
+          description: FK into the Customer Category lookup; drives rate/pricing selection in the FD module
+        effectiveDate:
+          type: string
+          format: date
+
+    # ---------------- Typed child records ----------------
+    CustomerName:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        custId:
+          type: string
+        classificationId:
+          type: integer
+          format: int64
+          description: FK into Classification (name-component type, e.g. FIRST/MIDDLE/LAST)
+        value:
+          type: string
+        effectiveDate:
+          type: string
+          format: date
+
+    CustomerNameRequest:
+      type: object
+      required: [classificationId, value]
+      properties:
+        classificationId:
+          type: integer
+          format: int64
+        value:
+          type: string
+        effectiveDate:
+          type: string
+          format: date
+
+    CustomerAddress:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        custId:
+          type: string
+        classificationId:
+          type: integer
+          format: int64
+          description: FK into Classification (address type, e.g. PERMANENT/CURRENT)
+        value:
+          type: string
+        effectiveDate:
+          type: string
+          format: date
+
+    CustomerAddressRequest:
+      type: object
+      required: [classificationId, value]
+      properties:
+        classificationId:
+          type: integer
+          format: int64
+        value:
+          type: string
+        effectiveDate:
+          type: string
+          format: date
+
+    CustomerContact:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        custId:
+          type: string
+        classificationId:
+          type: integer
+          format: int64
+          description: FK into Classification (contact type, e.g. MOBILE/EMAIL)
+        value:
+          type: string
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+          nullable: true
+        effectiveDate:
+          type: string
+          format: date
+
+    CustomerContactRequest:
+      type: object
+      required: [classificationId, value, startDate]
+      properties:
+        classificationId:
+          type: integer
+          format: int64
+        value:
+          type: string
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+          nullable: true
+        effectiveDate:
+          type: string
+          format: date
+
+    CustomerProofOfId:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        custId:
+          type: string
+        classificationId:
+          type: integer
+          format: int64
+          description: FK into Classification (document type, e.g. PASSPORT/AADHAAR)
+        value:
+          type: string
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+          nullable: true
+        effectiveDate:
+          type: string
+          format: date
+          description: When this document became the customer's active/current proof of ID
+
+    CustomerProofOfIdRequest:
+      type: object
+      required: [classificationId, value, startDate, effectiveDate]
+      properties:
+        classificationId:
+          type: integer
+          format: int64
+        value:
+          type: string
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+          nullable: true
+        effectiveDate:
+          type: string
+          format: date
+
+    CustomerIdentification:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        custId:
+          type: string
+        classificationId:
+          type: integer
+          format: int64
+          description: FK into Classification (identification type)
+        idItem:
+          type: string
+          description: The identification value itself (e.g. an external ID or alternate lookup value)
+        effectiveDate:
+          type: string
+          format: date
+
+    CustomerIdentificationRequest:
+      type: object
+      required: [classificationId, idItem]
+      properties:
+        classificationId:
+          type: integer
+          format: int64
+        idItem:
+          type: string
+        effectiveDate:
+          type: string
+          format: date
+
+    # ---------------- Classification (lookup) ----------------
+    Classification:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        type:
+          type: string
+          example: ADDRESS_TYPE
+        value:
+          type: string
+          example: PERMANENT
+        effectiveDate:
+          type: string
+          format: date
+
+    ClassificationRequest:
+      type: object
+      required: [type, value]
+      properties:
+        type:
+          type: string
+        value:
+          type: string
+        effectiveDate:
+          type: string
+          format: date
+
+    # ---------------- Errors ----------------
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: error
+        message:
+          type: string
+        code:
+          type: string
+          nullable: true

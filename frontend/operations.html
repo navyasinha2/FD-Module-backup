@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FD Operations Console</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <main class="page wide">
+    <nav class="topnav">
+      <a href="index.html">Open account</a>
+      <a href="withdraw.html">Withdraw FD</a>
+      <a href="operations.html" aria-current="page">Operations</a>
+    </nav>
+    <h1>FD Operations Console</h1>
+    <p class="subtitle">fd-service · business clock · interest batch · account ledger · GL balances</p>
+
+    <div id="global-error" class="errors" role="alert" hidden></div>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Business clock</h2>
+      </div>
+      <dl class="kv" id="clock-view"></dl>
+      <div class="inline-form">
+        <label>Business date
+          <input type="date" id="clock-date" />
+        </label>
+        <button type="button" id="clock-set-btn" class="secondary">Set date</button>
+        <label>Days
+          <input type="number" id="clock-days" min="1" step="1" value="1" />
+        </label>
+        <button type="button" id="clock-advance-btn" class="secondary">Advance</button>
+        <button type="button" id="eod-btn" class="primary">Run end of day</button>
+      </div>
+      <p class="hint">End of day runs automatically at 12:00 am (Asia/Kolkata) for the business date that just ended: ACCRUAL (that day's interest) then MATURITY, then the date moves forward one day. Missed dates are caught up in order.</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Interest batch</h2>
+      </div>
+      <div class="inline-form">
+        <label>Business date
+          <input type="date" id="batch-date" />
+        </label>
+        <button type="button" class="primary run-job" data-job="ACCRUAL">Run ACCRUAL</button>
+        <button type="button" class="primary run-job" data-job="MATURITY">Run MATURITY</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Run</th><th>Job</th><th>Business date</th><th>Status</th>
+              <th class="num">Read</th><th class="num">Written</th><th class="num">Skipped</th>
+              <th>Finished</th><th>Message</th>
+            </tr>
+          </thead>
+          <tbody id="runs-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Account</h2>
+      </div>
+      <form id="lookup-form" class="inline-form">
+        <label>Account number or FDA_ID
+          <input type="text" id="lookup-key" placeholder="FD001000001" required />
+        </label>
+        <button type="submit" class="primary">Load</button>
+      </form>
+
+      <div id="account-section" hidden>
+        <dl class="kv" id="account-view"></dl>
+
+        <h3>Transactions</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th><th>Type</th><th>Dr/Cr</th><th class="num">Amount</th>
+                <th class="num">Balance before</th><th class="num">Balance after</th>
+                <th>Txn date</th><th>Value date</th><th>Remarks</th>
+              </tr>
+            </thead>
+            <tbody id="txn-body"></tbody>
+          </table>
+        </div>
+
+        <h3>Interest preview</h3>
+        <form id="preview-form" class="inline-form">
+          <label>Period start
+            <input type="date" id="preview-start" required />
+          </label>
+          <label>Period end
+            <input type="date" id="preview-end" required />
+          </label>
+          <button type="submit" class="secondary">Calculate</button>
+        </form>
+        <dl class="kv" id="preview-view" hidden></dl>
+
+        <div id="withdraw-block">
+          <h3>Premature withdrawal</h3>
+          <p class="hint">Closes the deposit on the current business date: interest to date is credited, the penalty is debited and the rest is paid out.</p>
+          <button type="button" id="withdraw-btn" class="danger">Withdraw before maturity</button>
+          <div id="withdraw-confirm" class="confirm" hidden>
+            <span id="withdraw-confirm-text"></span>
+            <button type="button" id="withdraw-confirm-btn" class="danger">Confirm withdrawal</button>
+            <button type="button" id="withdraw-cancel-btn" class="secondary">Cancel</button>
+          </div>
+        </div>
+        <dl class="kv" id="withdraw-result" hidden></dl>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>GL accounts</h2>
+        <button type="button" id="gl-refresh-btn" class="secondary">Refresh all</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>GL code</th><th>Name</th><th>Type</th><th>Currency</th><th class="num">Balance</th></tr>
+          </thead>
+          <tbody id="gl-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/api.js"></script>
+  <script src="js/ops.js"></script>
+</body>
+</html>
